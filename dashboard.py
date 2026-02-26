@@ -27,10 +27,12 @@ def process_pdf(pdf_file):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     
-    # UPDATED 2026 STABLE MODEL: gemini-embedding-001
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    # 2026 FIX: Use gemini-embedding-001 with the RETRIEVAL_DOCUMENT task type
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+        task_type="RETRIEVAL_DOCUMENT" # This tells Google to optimize for RAG
+    )
     return FAISS.from_texts(chunks, embeddings)
-
 # Initialize Session States
 if "messages" not in st.session_state: st.session_state.messages = []
 if "vector_db" not in st.session_state: st.session_state.vector_db = None
@@ -86,3 +88,4 @@ if prompt := st.chat_input("Ask ValdezAI..."):
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
             st.error(f"Analysis Error: {e}")
+
