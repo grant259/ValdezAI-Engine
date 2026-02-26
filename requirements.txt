@@ -6,3 +6,4 @@ tabulate
 pypdf
 langchain-community
 faiss-cpu
+langchain-text-splitters
