@@ -1,7 +1,7 @@
 streamlit
 pandas
 langchain-experimental
-langchain-google-genai
+langchain-google-genai>=2.0.0
 tabulate
 pypdf
 langchain-community
