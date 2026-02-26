@@ -19,7 +19,7 @@ st.markdown("---")
 
 # --- 3. DATA LOADING ---
 # Path on GitHub should match your repository structure
-csv_path = "docs_to_index/commission_data.csv"
+csv_path = "commission_data.csv"
 
 @st.cache_resource
 def init_agent():
@@ -74,3 +74,4 @@ if prompt := st.chat_input("Ask about names, averages, or totals..."):
                 st.session_state.messages.append({"role": "assistant", "content": response})
             except Exception as e:
                 st.error(f"Agent Error: {e}")
+
