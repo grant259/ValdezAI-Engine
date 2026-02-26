@@ -22,16 +22,20 @@ st.title("🛡️ ValdezAI Private Intelligence")
 # --- 3. PERSISTENT DATA PROCESSING ---
 def process_pdf(pdf_file):
     reader = PdfReader(pdf_file)
+    # Join text and remove null characters that crash 2026 models
     text = "".join([page.extract_text() or "" for page in reader.pages]).replace('\x00', '')
     
+    # Split text into chunks
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     
-    # 2026 FIX: Use gemini-embedding-001 with the RETRIEVAL_DOCUMENT task type
+    # 2026 STABLE MODEL: gemini-embedding-001
     embeddings = GoogleGenerativeAIEmbeddings(
         model="models/gemini-embedding-001",
-        task_type="RETRIEVAL_DOCUMENT" # This tells Google to optimize for RAG
+        task_type="RETRIEVAL_DOCUMENT" # Critical for 2026 API stability
     )
+    
+    # Build the 'Vector Brain'
     return FAISS.from_texts(chunks, embeddings)
 # Initialize Session States
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -88,4 +92,5 @@ if prompt := st.chat_input("Ask ValdezAI..."):
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
             st.error(f"Analysis Error: {e}")
+
 
