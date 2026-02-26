@@ -5,7 +5,7 @@ from pypdf import PdfReader
 from langchain_experimental.agents import create_csv_agent
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter # UPDATED IMPORT
 from langchain.chains import RetrievalQA
 
 # --- 1. CLOUD SECURITY ---
@@ -26,11 +26,11 @@ def process_pdf(pdf_file):
     for page in reader.pages:
         text += page.extract_text()
     
-    # Split text into chunks so the AI can 'digest' it
+    # Split text into chunks
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     
-    # Create a searchable 'Vector Brain'
+    # Create Vector Brain
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vector_store = FAISS.from_texts(chunks, embeddings)
     return vector_store
@@ -38,9 +38,8 @@ def process_pdf(pdf_file):
 # --- 4. SIDEBAR & FILE UPLOADER ---
 with st.sidebar:
     st.header("📂 Data Upload")
-    uploaded_file = st.file_uploader("Upload CSV (Data) or PDF (Manuals/Contracts)", type=["csv", "pdf"])
+    uploaded_file = st.file_uploader("Upload CSV or PDF", type=["csv", "pdf"])
     
-    # Default file if nothing is uploaded
     default_csv = "commission_data.csv"
     active_mode = None
 
@@ -68,7 +67,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Ask about your data or document..."):
+if prompt := st.chat_input("Ask about your data..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -76,12 +75,10 @@ if prompt := st.chat_input("Ask about your data or document..."):
     with st.chat_message("assistant"):
         try:
             if active_mode == "CSV":
-                # Use the CSV Agent for math/records
-                agent = create_csv_agent(llm, "temp_data.csv" if uploaded_file else default_csv, 
-                                         allow_dangerous_code=True, handle_parsing_errors=True)
+                path = "temp_data.csv" if uploaded_file else default_csv
+                agent = create_csv_agent(llm, path, allow_dangerous_code=True, handle_parsing_errors=True)
                 response = agent.run(prompt)
             elif active_mode == "PDF":
-                # Use RAG for reading contracts/manuals
                 qa_chain = RetrievalQA.from_chain_type(llm, chain_type="stuff", retriever=vector_db.as_retriever())
                 response = qa_chain.run(prompt)
             else:
