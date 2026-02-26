@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import time
 import pandas as pd
 from pypdf import PdfReader
 from langchain_experimental.agents import create_csv_agent
@@ -19,26 +20,50 @@ else:
 st.set_page_config(page_title="ValdezAI Universal", page_icon="🛡️", layout="wide")
 st.title("🛡️ ValdezAI Private Intelligence")
 
-# --- 3. THE "ERROR-KILLER" PDF PROCESSOR ---
+# --- 3. THE "QUOTA-SAFE" PDF PROCESSOR ---
 def process_pdf(pdf_file):
-    # 1. Extract & Clean (Strip weird chars that crash Google's 2026 API)
     reader = PdfReader(pdf_file)
     text = "".join([page.extract_text() or "" for page in reader.pages])
     text = text.encode("utf-8", "ignore").decode("utf-8").replace('\x00', '')
     
-    # 2. Aggressive Small Chunking
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=70)
+    # Large chunks reduce the NUMBER of API calls (staying under the 15 RPM limit)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
     chunks = text_splitter.split_text(text)
     
-    # 3. Explicit 2026 Embedding Settings
     embeddings = GoogleGenerativeAIEmbeddings(
         model="models/gemini-embedding-001",
         task_type="retrieval_document"
     )
     
-    # 4. THE FIX: Manually embed in tiny batches to bypass the 'Redacted' Quota Error
-    # This avoids the internal LangChain 'batch_embed' logic that is currently failing
-    vector_store = FAISS.from_texts(chunks, embeddings, batch_size=5) 
+    # THE "GOOGLE-PROOF" FIX: Process chunks one by one with a delay
+    vector_store = None
+    progress_bar = st.progress(0, text="Building PDF Brain...")
+    
+    for i, chunk in enumerate(chunks):
+        # Update progress
+        percent = int(((i + 1) / len(chunks)) * 100)
+        progress_bar.progress(percent, text=f"Processing chunk {i+1} of {len(chunks)}...")
+        
+        success = False
+        retries = 0
+        while not success and retries < 5:
+            try:
+                if vector_store is None:
+                    vector_store = FAISS.from_texts([chunk], embeddings)
+                else:
+                    vector_store.add_texts([chunk])
+                success = True
+                # Mandatory 4-second sleep to stay under the Free Tier 15-per-minute limit
+                time.sleep(4) 
+            except Exception as e:
+                if "429" in str(e):
+                    st.warning(f"Quota hit! Waiting 10 seconds to retry...")
+                    time.sleep(10)
+                    retries += 1
+                else:
+                    raise e
+                    
+    progress_bar.empty()
     return vector_store
 
 # State Management
@@ -57,13 +82,10 @@ with st.sidebar:
                 f.write(uploaded_file.getbuffer())
             st.session_state.active_mode = "CSV"
         elif uploaded_file.name.endswith('.pdf'):
-            with st.spinner("Forcing PDF Brain through Google API..."):
-                try:
-                    st.session_state.vector_db = process_pdf(uploaded_file)
-                    st.session_state.active_mode = "PDF"
-                    st.success("PDF Indexed Successfully")
-                except Exception as e:
-                    st.error(f"Google API Refused: {e}")
+            if st.session_state.vector_db is None:
+                st.session_state.vector_db = process_pdf(uploaded_file)
+                st.session_state.active_mode = "PDF"
+                st.success("PDF Brain Built!")
 
 # --- 5. INITIALIZE AI ---
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
@@ -86,7 +108,7 @@ if prompt := st.chat_input("Ask ValdezAI..."):
                 qa_chain = RetrievalQA.from_chain_type(llm, chain_type="stuff", retriever=st.session_state.vector_db.as_retriever())
                 response = qa_chain.run(prompt)
             else:
-                response = "I need a file to analyze. Please upload above."
+                response = "Please upload a file to begin."
             
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
