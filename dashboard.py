@@ -23,9 +23,12 @@ st.title("🛡️ ValdezAI Private Intelligence")
 def process_pdf(pdf_file):
     reader = PdfReader(pdf_file)
     text = "".join([page.extract_text() or "" for page in reader.pages]).replace('\x00', '')
+    
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    
+    # UPDATED 2026 STABLE MODEL: gemini-embedding-001
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
     return FAISS.from_texts(chunks, embeddings)
 
 # Initialize Session States
@@ -39,24 +42,30 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Upload CSV or PDF", type=["csv", "pdf"])
     
     if uploaded_file:
+        # If user uploads a NEW file, clear the old brain to prevent math errors
+        if "last_file" not in st.session_state or st.session_state.last_file != uploaded_file.name:
+            st.session_state.vector_db = None
+            st.session_state.last_file = uploaded_file.name
+
         if uploaded_file.name.endswith('.csv'):
             with open("temp_data.csv", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             st.session_state.active_mode = "CSV"
         elif uploaded_file.name.endswith('.pdf'):
-            # ONLY process if it's a new file to save time/API costs
-            with st.spinner("Building PDF Brain..."):
-                st.session_state.vector_db = process_pdf(uploaded_file)
-                st.session_state.active_mode = "PDF"
+            if st.session_state.vector_db is None:
+                with st.spinner("Building PDF Brain with Gemini Embeddings..."):
+                    st.session_state.vector_db = process_pdf(uploaded_file)
+            st.session_state.active_mode = "PDF"
         st.success(f"Active: {uploaded_file.name}")
 
-# --- 5. CHAT ENGINE ---
+# --- 5. INITIALIZE AI ---
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
+# Display Chat History
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
+# --- 6. CHAT ENGINE ---
 if prompt := st.chat_input("Ask ValdezAI..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
@@ -77,4 +86,3 @@ if prompt := st.chat_input("Ask ValdezAI..."):
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
             st.error(f"Analysis Error: {e}")
-
