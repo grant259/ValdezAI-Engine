@@ -3,3 +3,6 @@ pandas
 langchain-experimental
 langchain-google-genai
 tabulate
+pypdf
+langchain-community
+faiss-cpu
