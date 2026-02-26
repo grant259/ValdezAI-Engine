@@ -4,74 +4,72 @@ import pandas as pd
 from langchain_experimental.agents import create_csv_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# --- 1. CLOUD SECURITY SETUP ---
-# This pulls your API key from the "Advanced Settings > Secrets" box you just filled out
+# --- 1. CLOUD SECURITY & SECRETS ---
 if "GOOGLE_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 else:
-    st.error("❌ GOOGLE_API_KEY not found in Streamlit Secrets. Please add it in Advanced Settings.")
+    st.error("❌ API Key Missing: Go to Streamlit Advanced Settings > Secrets and add GOOGLE_API_KEY = 'your_key'")
     st.stop()
 
-# --- 2. PAGE CONFIGURATION ---
+# --- 2. PAGE CONFIG ---
 st.set_page_config(page_title="ValdezAI Cloud Engine", page_icon="🛡️", layout="wide")
 st.title("🛡️ ValdezAI Private Intelligence")
 st.markdown("---")
 
-# --- 3. DATA LOADING ---
-# Path on GitHub should match your repository structure
-csv_path = "commission_data.csv"
+# --- 3. DYNAMIC DATA LOADING ---
+# This looks for the CSV in the same folder as the script automatically
+current_dir = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(current_dir, "commission_data.csv")
 
 @st.cache_resource
 def init_agent():
-    # Using Gemini 1.5 Flash: It's the 'Jet Engine' for this logic
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+    # UPDATE: Using the latest stable 2026 model ID
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     
-    # Create the 'Fuzzy Logic' Agent
     agent = create_csv_agent(
         llm, 
         csv_path, 
         verbose=True, 
-        allow_dangerous_code=True, # Allows the AI to do math/calculations
-        handle_parsing_errors=True
+        allow_dangerous_code=True,
+        handle_parsing_errors=True,
+        max_iterations=10 # Gives it more room to think
     )
     return agent
 
-# Verify file exists on GitHub before starting
 if os.path.exists(csv_path):
-    # Verify the CSV encoding is clean for the cloud
     try:
-        # Show a small preview in the sidebar so you know it's working
+        # Sidebar preview ensures the file is 'readable'
         df_preview = pd.read_csv(csv_path, encoding='utf-8-sig')
         st.sidebar.success("✅ Records Online")
-        st.sidebar.dataframe(df_preview.head(3))
-    except:
-        st.sidebar.error("⚠️ CSV Encoding issue. Ensure it is saved as 'CSV (Comma delimited)'.")
-    
-    agent = init_agent()
+        st.sidebar.dataframe(df_preview.head(5))
+        agent = init_agent()
+    except Exception as e:
+        st.sidebar.error(f"⚠️ CSV Error: {e}")
+        st.stop()
 else:
-    st.error(f"❌ Database not found at {csv_path}. Check your GitHub folder structure.")
+    st.error(f"❌ Database not found. Ensure 'commission_data.csv' is in the same folder as this script.")
+    st.info(f"Currently looking at: {csv_path}")
     st.stop()
 
 # --- 4. CHAT INTERFACE ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "ValdezAI Cloud is active. How can I help you analyze your data?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "ValdezAI Cloud is active. Ask me about your commission records."}]
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Ask about names, averages, or totals..."):
+if prompt := st.chat_input("Ex: 'Who had the highest commission?' or 'What is the average?'"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("ValdezAI is thinking..."):
+        with st.spinner("ValdezAI is calculating..."):
             try:
-                # The Cloud Agent writes code, runs math, and gives the answer
+                # The Gemini Agent reads the CSV and generates a response
                 response = agent.run(prompt)
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
             except Exception as e:
                 st.error(f"Agent Error: {e}")
-
