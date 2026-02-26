@@ -5,8 +5,8 @@ from pypdf import PdfReader
 from langchain_experimental.agents import create_csv_agent
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_text_splitters import RecursiveCharacterTextSplitter # UPDATED IMPORT
-from langchain.chains import RetrievalQA
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_classic.chains import RetrievalQA # NEW 2026 IMPORT
 
 # --- 1. CLOUD SECURITY ---
 if "GOOGLE_API_KEY" in st.secrets:
@@ -26,11 +26,9 @@ def process_pdf(pdf_file):
     for page in reader.pages:
         text += page.extract_text()
     
-    # Split text into chunks
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
     
-    # Create Vector Brain
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vector_store = FAISS.from_texts(chunks, embeddings)
     return vector_store
@@ -49,12 +47,12 @@ with st.sidebar:
                 f.write(uploaded_file.getbuffer())
             active_mode = "CSV"
         elif uploaded_file.name.endswith('.pdf'):
-            vector_db = process_pdf(uploaded_file)
+            # This triggers the PDF 'Brain'
+            st.session_state.vector_db = process_pdf(uploaded_file)
             active_mode = "PDF"
         st.success(f"Loaded: {uploaded_file.name}")
     elif os.path.exists(default_csv):
         active_mode = "CSV"
-        csv_path = default_csv
 
 # --- 5. INITIALIZE AI ---
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
@@ -79,12 +77,14 @@ if prompt := st.chat_input("Ask about your data..."):
                 agent = create_csv_agent(llm, path, allow_dangerous_code=True, handle_parsing_errors=True)
                 response = agent.run(prompt)
             elif active_mode == "PDF":
-                qa_chain = RetrievalQA.from_chain_type(llm, chain_type="stuff", retriever=vector_db.as_retriever())
+                # RetrievalQA from langchain-classic handles the contract reading
+                qa_chain = RetrievalQA.from_chain_type(llm, chain_type="stuff", retriever=st.session_state.vector_db.as_retriever())
                 response = qa_chain.run(prompt)
             else:
-                response = "Please upload a file to start the analysis."
+                response = "Please upload a file to begin."
             
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
             st.error(f"Error: {e}")
+
