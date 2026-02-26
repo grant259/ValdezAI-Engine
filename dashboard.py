@@ -22,20 +22,21 @@ st.title("🛡️ ValdezAI Private Intelligence")
 # --- 3. PERSISTENT DATA PROCESSING ---
 def process_pdf(pdf_file):
     reader = PdfReader(pdf_file)
-    # Join text and remove null characters
+    # Join text and kill null chars
     text = "".join([page.extract_text() or "" for page in reader.pages]).replace('\x00', '')
     
-    # Split into chunks
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    # Smaller chunks = less chance of a Google Timeout
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=80)
     chunks = text_splitter.split_text(text)
     
-    # 2026 STABLE FIX:
-    # We initialize the model ID here, but we DON'T pass task_type yet.
-    # The LangChain FAISS integration will handle the 'task_type' internally.
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    # 2026 PRODUCTION SETTINGS
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+        task_type="RETRIEVAL_DOCUMENT" # Forced Task Type
+    )
     
-    # Build the 'Vector Brain'
-    return FAISS.from_texts(chunks, embeddings)
+    # GOOGLE FIX: We force a small batch size to prevent the 'Redacted' API Error
+    return FAISS.from_texts(chunks, embeddings, batch_size=16)
 # Initialize Session States
 if "messages" not in st.session_state: st.session_state.messages = []
 if "vector_db" not in st.session_state: st.session_state.vector_db = None
@@ -91,6 +92,7 @@ if prompt := st.chat_input("Ask ValdezAI..."):
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
             st.error(f"Analysis Error: {e}")
+
 
 
 
