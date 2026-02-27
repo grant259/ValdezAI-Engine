@@ -1,12 +1,12 @@
-streamlit>=1.42.0
+streamlit
 pandas
 langchain-experimental
-langchain-google-genai>=4.2.1
-tabulate
+langchain-google-genai
+langchain-pinecone
+pinecone
 pypdf
 langchain-community
 faiss-cpu
 langchain-text-splitters
 langchain-classic
-langchain-pinecone>=0.2.13
-pinecone>=8.1.0
+tabulate
