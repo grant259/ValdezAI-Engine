@@ -8,3 +8,6 @@ langchain-community
 faiss-cpu
 langchain-text-splitters
 langchain-classic
+pinecone-client
+st-files-connection
+gcsfs
