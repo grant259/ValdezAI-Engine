@@ -11,3 +11,5 @@ langchain-classic
 pinecone-client
 st-files-connection
 gcsfs
+langchain-pinecone 
+pinecone-client
