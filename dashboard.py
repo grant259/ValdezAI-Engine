@@ -29,7 +29,7 @@ index_name = "valdezai-vault"
 embeddings = GoogleGenerativeAIEmbeddings(
     model="models/gemini-embedding-001",
     task_type="retrieval_document",
-    output_dimensionality=768 # <--- The 2026 Redacted Error Fix
+    output_dimensionality=768
 )
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
@@ -40,26 +40,24 @@ def process_pdf(pdf_file):
     text = "".join([page.extract_text() or "" for page in reader.pages])
     text = text.encode("utf-8", "ignore").decode("utf-8").replace('\x00', '')
     
-    # Smaller chunks help avoid Google's 2026 per-request token limits
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=80)
     chunks = text_splitter.split_text(text)
     
     with st.spinner(f"🔒 Vaulting {len(chunks)} chunks into Pinecone..."):
-        # We process in small batches of 5 to avoid 429 Quota errors
         for i in range(0, len(chunks), 5):
             batch = chunks[i:i+5]
-            vector_store = PineconeVectorStore.from_texts(
+            # This directly sends the PDF data to your Pinecone cloud
+            PineconeVectorStore.from_texts(
                 batch, 
                 embeddings, 
                 index_name=index_name,
                 namespace="default_user"
             )
-            time.sleep(2) # Safe throttle for Free Tier
-    return vector_store
+            time.sleep(1) # Safe throttle for Free Tier
+    st.success("Vault Updated!")
 
 # --- 4. SESSION MANAGEMENT ---
 if "messages" not in st.session_state: st.session_state.messages = []
-if "active_mode" not in st.session_state: st.session_state.active_mode = "CSV"
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
@@ -70,22 +68,16 @@ with st.sidebar:
         if uploaded_file.name.endswith('.csv'):
             with open("temp_data.csv", "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            st.session_state.active_mode = "CSV"
             st.success("CSV Ready")
         elif uploaded_file.name.endswith('.pdf'):
-            try:
-                process_pdf(uploaded_file)
-                st.session_state.active_mode = "PDF"
-                st.success("Vault Updated")
-            except Exception as e:
-                st.error(f"Vaulting Failed: {e}")
+            process_pdf(uploaded_file)
 
     st.markdown("---")
     if st.button("🗑️ Clear Chat History"):
         st.session_state.messages = []
         st.rerun()
 
-# --- 6. CHAT INTERFACE ---
+# --- 6. CHAT INTERFACE (SMART SEARCH) ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
@@ -94,24 +86,32 @@ if prompt := st.chat_input("Ask ValdezAI..."):
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
+        response = ""
         try:
-            if st.session_state.active_mode == "CSV":
-                path = "temp_data.csv" if os.path.exists("temp_data.csv") else "commission_data.csv"
-                agent = create_csv_agent(llm, path, allow_dangerous_code=True, handle_parsing_errors=True)
-                response = agent.run(prompt)
-            elif st.session_state.active_mode == "PDF":
-                # Connect to existing cloud vault
-                vector_db = PineconeVectorStore(index_name=index_name, embedding=embeddings, namespace="default_user")
-                qa_chain = RetrievalQA.from_chain_type(llm, chain_type="stuff", retriever=vector_db.as_retriever())
-                response = qa_chain.run(prompt)
-            else:
-                response = "Vault is empty. Please upload a file."
+            # STEP 1: Always check the PDF Vault (Pinecone) first
+            vector_db = PineconeVectorStore(index_name=index_name, embedding=embeddings, namespace="default_user")
+            qa_chain = RetrievalQA.from_chain_type(llm, chain_type="stuff", retriever=vector_db.as_retriever())
             
+            pdf_response = qa_chain.run(prompt)
+            
+            # If Pinecone has a valid answer, use it
+            if "I don't know" not in pdf_response and "not mentioned" not in pdf_response and "does not contain" not in pdf_response:
+                response = pdf_response
+            
+            # STEP 2: Fallback to CSV if PDF has no answer
+            if not response:
+                path = "temp_data.csv" if os.path.exists("temp_data.csv") else "commission_data.csv"
+                if os.path.exists(path):
+                    agent = create_csv_agent(llm, path, allow_dangerous_code=True)
+                    response = agent.run(prompt)
+                else:
+                    response = "I couldn't find an answer in the Vault or CSV. Please upload more data."
+
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
+
         except Exception as e:
             st.error(f"Analysis Error: {e}")
-
 
 
 
